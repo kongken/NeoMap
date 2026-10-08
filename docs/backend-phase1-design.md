@@ -1,6 +1,6 @@
 # NeoMap 后端第一阶段设计：账号与云同步
 
-状态：草案（2026-10-08）；里程碑 1（骨架）、里程碑 2（认证）已完成，见 `server/`
+状态：草案（2026-10-08）；里程碑 1（骨架）、2（认证）、3（行程 API）已完成，见 `server/`
 
 ## 1. 目标与范围
 
@@ -170,7 +170,7 @@ CREATE TABLE flight_legs (
 
 **约束与上限**（服务端强制，与前端 Zod 一致）：每用户最多 500 个假期，每个假期最多 200 段，单次请求体 ≤ 1 MB。
 
-**墓碑清理**：`deleted_at` 超过 90 天的行程由定时任务物理删除（用 Redis 租约保证只有一个副本执行）。超过 90 天未同步的设备再次同步时，按「全量重新拉取」处理（见 6.4）。
+**墓碑清理**：`deleted_at` 超过 90 天的行程由定时任务物理删除（用 Redis 租约保证只有一个副本执行）。清理时把该用户被删墓碑的最大 `change_seq` 记入 `users.tombstones_purged_through`（迁移 00002）；游标落在 `(0, 该水位)` 之间时 `ListChanges` 返回 `FailedPrecondition`，客户端清空游标全量拉取（见 6.4）。清理逻辑已实现（`trip.Postgres.PurgeTombstones`），定时调度在里程碑 5 接入。
 
 ## 6. 同步协议
 
@@ -219,7 +219,16 @@ message DeleteTripRequest   { string trip_id = 1; int64 base_revision = 2; }
 3. 存在且属于当前用户：`revision` 必须等于 `base_revision`，否则返回 `Aborted`，并附带服务端当前版本（`ErrorDetail` 中携带 `TripBundle`）。
 4. 删除该行程原有的 `flight_legs`、`trip_airports`，再插入新数据；`revision += 1`，`change_seq = nextval(...)`，`server_updated_at = now()`，`deleted_at = NULL`。
 
-`DeleteTrip` 同样先锁用户行、检查 `base_revision`，然后设置 `deleted_at`、`revision += 1`、`change_seq = nextval(...)`，并删除航段与快照。
+**实现补充**（里程碑 3）：
+
+- **幂等重试**：`base_revision` 不一致但提交内容与服务端当前内容完全相同时，视为「成功写入后响应丢失的重试」，直接返回当前版本，不报冲突（避免客户端误建副本）。
+- **恢复墓碑**：以墓碑的版本号为 `base_revision` 写入即可恢复；用旧版本修改已删除的行程返回 `Aborted`（详情中 `deleted = true`）。
+- **ID 被占用**：行程 ID 属于其他用户、或航段 ID 被其他行程使用时返回 `AlreadyExists`，客户端换新 ID 重试。删除他人行程返回 `NotFound`（不泄露其存在）。
+- **数量上限**：新建或恢复行程超过 500 个时返回 `ResourceExhausted`。
+- **游标**：格式 `c1.<change_seq>`，客户端视为不透明字符串；没有新变更时 `next_cursor` 原样返回。
+- **请求校验**：字段级规则写在 proto（protovalidate，由 Connect 拦截器执行），跨字段规则（日期真实存在、结束不早于开始、航段顺序从 0 连续、航段引用的机场存在于快照、起终点 IATA 不同、ID 不重复）在服务层校验；请求体上限 1 MiB。
+
+`DeleteTrip` 同样先锁用户行、检查 `base_revision`，然后设置 `deleted_at`、`revision += 1`、`change_seq = nextval(...)`，并删除航段与快照；墓碑同时清除标题、日期、备注（不保留用户内容），对外只暴露行程 ID。已删除的行程重复删除是幂等的。
 
 ### 6.3 客户端同步模块
 
@@ -307,7 +316,7 @@ NeoMap/
 
 1. ✅ 骨架：Butterfly + ConnectRPC + 迁移 + `/healthz`，CI 与镜像发布。
 2. ✅ 认证：OAuth（GitHub、Google，带 PKCE）、会话、`GetMe` / `ListProviders` / `Logout`，前端登录入口。
-3. 行程 API：`PutTrip` / `DeleteTrip` / `ListChanges`，仓储与测试。
+3. ✅ 行程 API：`PutTrip` / `DeleteTrip` / `ListChanges`，仓储与测试（墓碑清理的定时调度放到里程碑 5）。
 4. 前端同步模块：推送、拉取、冲突处理、首次登录上传、同步状态 UI。
 5. 上线准备：k8s 清单、限流、账号注销、隐私政策。
 

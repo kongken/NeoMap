@@ -68,15 +68,29 @@ func TestMigrationsUpDownUp(t *testing.T) {
 	if err := Up(ctx, db); err != nil {
 		t.Fatalf("second up: %v", err)
 	}
+	count := func(q string) int {
+		t.Helper()
+		var n int
+		if err := db.QueryRowContext(ctx, q).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	horizonCol := `SELECT count(*) FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'tombstones_purged_through'`
+	tripsTable := `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'trips'`
+
+	// 逐个回滚：00002 → 00001
 	if err := Down(ctx, db); err != nil {
-		t.Fatalf("down: %v", err)
+		t.Fatalf("down 00002: %v", err)
 	}
-	var n int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'trips'`).Scan(&n); err != nil {
-		t.Fatal(err)
+	if count(horizonCol) != 0 || count(tripsTable) != 1 {
+		t.Fatal("回滚 00002 后状态不正确")
 	}
-	if n != 0 {
-		t.Fatal("down 后 trips 表仍存在")
+	if err := Down(ctx, db); err != nil {
+		t.Fatalf("down 00001: %v", err)
+	}
+	if count(tripsTable) != 0 {
+		t.Fatal("回滚 00001 后 trips 表仍存在")
 	}
 	if err := Up(ctx, db); err != nil {
 		t.Fatalf("up after down: %v", err)
@@ -86,7 +100,7 @@ func TestMigrationsUpDownUp(t *testing.T) {
 	if err := Status(ctx, db, &status); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(status.String(), "00001_init.sql") || !strings.Contains(status.String(), "applied") {
+	if !strings.Contains(status.String(), "00001_init.sql") || !strings.Contains(status.String(), "00002_tombstone_horizon.sql") || strings.Contains(status.String(), "pending") {
 		t.Fatalf("unexpected status output: %q", status.String())
 	}
 }

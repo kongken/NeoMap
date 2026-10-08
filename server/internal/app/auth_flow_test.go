@@ -13,6 +13,7 @@ import (
 	neomapv1 "github.com/kongken/NeoMap/server/gen/neomap/v1"
 	"github.com/kongken/NeoMap/server/gen/neomap/v1/neomapv1connect"
 	"github.com/kongken/NeoMap/server/internal/auth/session"
+	"github.com/kongken/NeoMap/server/internal/repo/user"
 )
 
 type flow struct {
@@ -296,7 +297,7 @@ func TestSessionRenewalAndDeletedUser(t *testing.T) {
 
 	// 会话指向已删除用户：视为未登录
 	c = f.login("r-2")
-	f.env.users.Delete(u.GetId())
+	f.env.users.(*user.Memory).Delete(u.GetId())
 	if f.me(c) != nil {
 		t.Fatal("用户删除后仍返回 user")
 	}

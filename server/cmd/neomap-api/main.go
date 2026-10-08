@@ -32,6 +32,7 @@ import (
 	"github.com/kongken/NeoMap/server/internal/health"
 	"github.com/kongken/NeoMap/server/internal/migrate"
 	"github.com/kongken/NeoMap/server/internal/ratelimit"
+	"github.com/kongken/NeoMap/server/internal/repo/trip"
 	"github.com/kongken/NeoMap/server/internal/repo/user"
 	"github.com/kongken/NeoMap/server/internal/storage"
 )
@@ -85,6 +86,7 @@ func serve() {
 				}
 				users := user.NewPostgres(db)
 				deps.Users = users
+				deps.Trips = trip.NewPostgres(db)
 				deps.Auth = auth.NewService(n.Auth, n.HTTP.CORSAllowedOrigins,
 					auth.BuildProviders(n.Auth),
 					session.NewStore(rdb, n.Auth.SessionTTL, n.Auth.SessionRenewBefore),

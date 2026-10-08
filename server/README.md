@@ -3,7 +3,7 @@
 NeoMap 的后端服务：Go + [Butterfly](https://butterfly.orx.me) + ConnectRPC，存储使用 PostgreSQL 与 Redis。
 第一阶段（账号与云同步）的整体设计见 [docs/backend-phase1-design.md](../docs/backend-phase1-design.md)。
 
-已完成：骨架（健康检查、迁移、`SystemService`）与**登录**（GitHub / Google OAuth、Redis 会话、`AuthService`）。行程同步接口尚未实现。
+已完成：骨架（健康检查、迁移、`SystemService`）、**登录**（GitHub / Google OAuth、Redis 会话、`AuthService`）与**行程同步 API**（`TripService`）。前端尚未接入同步（里程碑 4）。
 
 ## 本地开发
 
@@ -64,6 +64,28 @@ curl -X POST -H 'Content-Type: application/json' -d '{}' \
 
 生产环境的 `app.` 与 `api.` 必须在同一主域下，并设置 `auth.cookie.domain: .<domain>`（见设计文档第 3 节）。
 
+## 行程同步（TripService）
+
+协议见设计文档第 6 节。同步单位是整个行程（假期 + 航段 + 机场快照），所有方法都需要登录。
+
+| 方法 | 说明 |
+| --- | --- |
+| `ListChanges(cursor, page_size)` | 返回游标之后变更过的行程（含墓碑），按变更顺序分页；`cursor` 为空表示全量 |
+| `PutTrip(bundle, base_revision)` | 写入整个行程；新建时 `base_revision = 0` |
+| `DeleteTrip(trip_id, base_revision)` | 删除，服务端保留只含 ID 的墓碑供其他设备同步 |
+
+| 错误码 | 含义与客户端处理 |
+| --- | --- |
+| `Aborted` | 版本冲突。错误详情含服务端当前 `TripBundle`：以服务端为准，本地修改另存为副本 |
+| `AlreadyExists` | 行程或航段 ID 已被其他账号 / 行程使用：换新 ID 重试 |
+| `NotFound` | 行程不存在（或属于其他账号） |
+| `FailedPrecondition` | 游标过期（墓碑已清理）：清空游标全量拉取 |
+| `ResourceExhausted` | 行程数超过 500，或请求体超过 1 MiB |
+| `InvalidArgument` | 校验失败（字段规则见 `proto/neomap/v1/trip.proto`） |
+| `Unauthenticated` | 未登录或会话失效 |
+
+实现要点：每次写入先锁定用户行，保证同一用户的变更序号按提交顺序递增（并发测试覆盖：去掉这把锁时增量同步会漏数据）；内容相同的重试视为成功；字段规则由 protovalidate 拦截器执行。
+
 ## 命令
 
 ```bash
@@ -86,6 +108,8 @@ NEOMAP_TEST_POSTGRES_DSN='postgres://neomap:neomap@localhost:5433/neomap?sslmode
 ## Proto 与代码生成
 
 proto 在仓库根目录 `proto/`，在根目录执行 `buf generate`：Go 代码输出到 `server/gen`，TypeScript 输出到 `src/gen`，生成结果纳入版本管理（CI 会检查是否最新）。
+
+依赖 `buf.build/bufbuild/protovalidate`（版本锁定在 `buf.lock`）。它的生成代码不在本仓库生成：Go 使用官方的 `buf.build/gen/go/bufbuild/protovalidate`，TypeScript 使用 `@bufbuild/protovalidate` 包（其中的 enum 与本项目的 `erasableSyntaxOnly` 不兼容，所以不自己生成）。服务端校验拦截器是 `connectrpc.com/validate`，固定在 v0.7.0：v0.8 起要求 connect-go v2。
 
 ## 配置
 

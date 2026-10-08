@@ -2,52 +2,17 @@ package user
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
-	"net/url"
-	"os"
 	"sync"
 	"testing"
-	"time"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/kongken/NeoMap/server/internal/auth/provider"
-	"github.com/kongken/NeoMap/server/internal/migrate"
+	"github.com/kongken/NeoMap/server/internal/testsupport/pgtest"
 )
 
-// 集成测试：设置 NEOMAP_TEST_POSTGRES_DSN 时运行（见 server/README.md）。
 func testRepo(t *testing.T) (*Postgres, *sql.DB) {
 	t.Helper()
-	dsn := os.Getenv("NEOMAP_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("NEOMAP_TEST_POSTGRES_DSN 未设置，跳过 PostgreSQL 集成测试")
-	}
-	admin, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = admin.Close() })
-	b := make([]byte, 6)
-	_, _ = rand.Read(b)
-	name := "neomap_test_" + hex.EncodeToString(b)
-	if _, err := admin.Exec("CREATE DATABASE " + name); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _, _ = admin.Exec("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)") })
-	u, _ := url.Parse(dsn)
-	u.Path = "/" + name
-	db, err := sql.Open("pgx", u.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	if err := migrate.Up(ctx, db); err != nil {
-		t.Fatal(err)
-	}
+	db := pgtest.New(t)
 	return NewPostgres(db), db
 }
 

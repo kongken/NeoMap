@@ -99,14 +99,14 @@ func (f *fakeOAuth) json(body func() any) http.HandlerFunc {
 type testAuthEnv struct {
 	mr    *miniredis.Miniredis
 	oauth *fakeOAuth
-	users *user.Memory
+	users user.Repository
 	svc   *auth.Service
 }
 
 var currentEnv *testAuthEnv
 
-// newTestAuth 组装使用 miniredis、内存用户仓储与假 OAuth 服务的 auth.Service。
-func newTestAuth(t *testing.T) (*auth.Service, user.Repository) {
+// newTestAuth 组装使用 miniredis、假 OAuth 服务的 auth.Service；users 为空时使用内存用户仓储。
+func newTestAuth(t *testing.T, users user.Repository) (*auth.Service, user.Repository) {
 	t.Helper()
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
@@ -125,7 +125,9 @@ func newTestAuth(t *testing.T) (*auth.Service, user.Repository) {
 				UserInfoURL: f.srv.URL + "/google/userinfo"},
 		},
 	}}.WithDefaults()
-	users := user.NewMemory()
+	if users == nil {
+		users = user.NewMemory()
+	}
 	svc := auth.NewService(cfg.Auth, []string{allowedOrigin}, auth.BuildProviders(cfg.Auth),
 		session.NewStore(rdb, cfg.Auth.SessionTTL, cfg.Auth.SessionRenewBefore),
 		oauthstate.NewStore(rdb), users, ratelimit.New(rdb))
