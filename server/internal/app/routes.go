@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"strings"
 
+	"connectrpc.com/connect"
 	connectcors "connectrpc.com/cors"
+	"connectrpc.com/validate"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/cors"
 
@@ -16,6 +18,9 @@ import (
 	"github.com/kongken/NeoMap/server/internal/repo/user"
 )
 
+// maxRequestBytes 限制单个 RPC 请求体（一个完整行程远小于此值）。
+const maxRequestBytes = 1 << 20
+
 // Deps 是路由需要的运行时依赖。它们在 Butterfly 的 InitFunc 中初始化，
 // 而 Router 在 InitFunc 之后才被调用，因此这里拿到的都是已就绪的依赖。
 type Deps struct {
@@ -25,6 +30,7 @@ type Deps struct {
 	TrustedProxies []string
 	Auth           *auth.Service
 	Users          user.Repository
+	Trips          application.TripRepository
 }
 
 // Register 挂载所有路由。
@@ -41,9 +47,15 @@ func Register(r *gin.Engine, d *Deps) error {
 	r.GET("/auth/oauth/:provider/start", d.Auth.Start)
 	r.GET("/auth/oauth/:provider/callback", d.Auth.Callback)
 
+	// protovalidate：按 proto 中的字段规则校验请求，不合法返回 InvalidArgument
+	opts := []connect.HandlerOption{
+		connect.WithInterceptors(validate.NewInterceptor()),
+		connect.WithReadMaxBytes(maxRequestBytes),
+	}
 	mount := connectMounter(r)
-	mount(neomapv1connect.NewSystemServiceHandler(application.NewSystemService(d.Build)))
-	mount(neomapv1connect.NewAuthServiceHandler(application.NewAuthService(d.Auth, d.Users)))
+	mount(neomapv1connect.NewSystemServiceHandler(application.NewSystemService(d.Build), opts...))
+	mount(neomapv1connect.NewAuthServiceHandler(application.NewAuthService(d.Auth, d.Users), opts...))
+	mount(neomapv1connect.NewTripServiceHandler(application.NewTripService(d.Trips), opts...))
 	return nil
 }
 

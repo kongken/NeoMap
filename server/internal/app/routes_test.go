@@ -15,15 +15,27 @@ import (
 	"github.com/kongken/NeoMap/server/gen/neomap/v1/neomapv1connect"
 	"github.com/kongken/NeoMap/server/internal/application"
 	"github.com/kongken/NeoMap/server/internal/health"
+	"github.com/kongken/NeoMap/server/internal/repo/user"
 )
 
 const allowedOrigin = "https://app.example.com"
 
+type serverOpts struct {
+	redisErr error
+	users    user.Repository // 为空时使用内存实现
+	trips    application.TripRepository
+}
+
 func newTestServer(t *testing.T, redisErr error) *httptest.Server {
+	return newTestServerWith(t, serverOpts{redisErr: redisErr})
+}
+
+func newTestServerWith(t *testing.T, o serverOpts) *httptest.Server {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	authSvc, users := newTestAuth(t)
+	redisErr := o.redisErr
+	authSvc, users := newTestAuth(t, o.users)
 	if err := Register(r, &Deps{
 		Build: application.BuildInfo{Service: "neomap-api", Version: "v1.2.3", Commit: "abc123"},
 		Health: health.NewHandler(map[string]health.Checker{
@@ -33,6 +45,7 @@ func newTestServer(t *testing.T, redisErr error) *httptest.Server {
 		AllowedOrigins: []string{allowedOrigin},
 		Auth:           authSvc,
 		Users:          users,
+		Trips:          o.trips,
 	}); err != nil {
 		t.Fatal(err)
 	}

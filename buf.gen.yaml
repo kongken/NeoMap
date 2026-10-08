@@ -3,6 +3,10 @@
 version: v2
 managed:
   enabled: true
+  # protovalidate 的 Go 类型使用官方发布的包（buf.build/go/protovalidate 依赖它），不在本仓库生成
+  disable:
+    - file_option: go_package
+      module: buf.build/bufbuild/protovalidate
   override:
     - file_option: go_package_prefix
       value: github.com/kongken/NeoMap/server/gen
@@ -16,7 +20,10 @@ plugins:
     opt: paths=source_relative
   - remote: buf.build/bufbuild/es:v2.10.2
     out: src/gen
-    include_imports: true
+    # 不生成依赖（buf/validate）：其 TS 代码含 enum，与 erasableSyntaxOnly 不兼容；
+    # 改为引用 @bufbuild/protovalidate 包中已发布的生成代码。
+    include_imports: false
     opt:
       - target=ts
-      - import_extension=none
+      - import_extension=js
+      - rewrite_imports=./buf/**/*_pb.js:@bufbuild/protovalidate/gen

@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package neomap.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+// TripService 同步行程。同步的基本单位是整个行程（假期 + 航段 + 机场快照）。
+// 所有方法都需要登录，未登录返回 Unauthenticated。
+// 协议见 docs/backend-phase1-design.md 第 6 节。
+service TripService {
+  // 增量拉取：返回游标之后变更过的行程（含已删除的墓碑），按变更顺序分页。
+  // 游标为空表示全量。游标过旧（对应的墓碑已被清理）时返回 FailedPrecondition，客户端应清空游标全量拉取。
+  rpc ListChanges(ListChangesRequest) returns (ListChangesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // 写入整个行程。base_revision 为客户端所知的版本，新建时为 0。
+  // 版本不一致返回 Aborted，错误详情中附带服务端当前的 TripBundle。
+  // 行程 ID 已被其他账号使用时返回 AlreadyExists，客户端应换新 ID 重试。
+  rpc PutTrip(PutTripRequest) returns (PutTripResponse);
+
+  // 删除行程（服务端保留墓碑供其他设备同步）。版本不一致返回 Aborted。
+  rpc DeleteTrip(DeleteTripRequest) returns (DeleteTripResponse);
+}
+
+message Trip {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string title = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 80
+  }];
+  // YYYY-MM-DD，可为空
+  string start_date = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+  ];
+  string end_date = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+  ];
+  string notes = 5 [(buf.validate.field).string.max_len = 1000];
+  bool is_sample = 6;
+  // 客户端的创建与最后修改时间
+  google.protobuf.Timestamp created_at = 7 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp updated_at = 8 [(buf.validate.field).required = true];
+}
+
+message FlightLeg {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // 播放顺序，同一行程内从 0 开始连续
+  int32 order = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lt: 200
+  }];
+  // 引用本行程 airports 中的 id
+  string departure_airport_id = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 200
+  }];
+  string arrival_airport_id = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 200
+  }];
+  // 出发地当地日期 YYYY-MM-DD
+  string departure_date = 5 [(buf.validate.field).string.pattern = "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"];
+  string flight_number = 6 [(buf.validate.field).string.max_len = 12];
+  string airline = 7 [(buf.validate.field).string.max_len = 60];
+  string notes = 8 [(buf.validate.field).string.max_len = 1000];
+  google.protobuf.Timestamp created_at = 9 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp updated_at = 10 [(buf.validate.field).required = true];
+}
+
+// 机场快照：添加航段时保存，机场目录更新不影响已有行程。
+message Airport {
+  string id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 200
+  }];
+  string iata = 2 [(buf.validate.field).string.pattern = "^[A-Z]{3}$"];
+  string name = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 200
+  }];
+  string name_zh = 4 [(buf.validate.field).string.max_len = 200];
+  string city = 5 [(buf.validate.field).string.max_len = 200];
+  string city_zh = 6 [(buf.validate.field).string.max_len = 200];
+  repeated string aliases = 7 [(buf.validate.field).repeated = {
+    max_items: 50
+    items: {
+      string: {max_len: 100}
+    }
+  }];
+  string country_code = 8 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 8
+  }];
+  string country_name = 9 [(buf.validate.field).string.max_len = 200];
+  double latitude = 10 [(buf.validate.field).double = {
+    gte: -90
+    lte: 90
+  }];
+  double longitude = 11 [(buf.validate.field).double = {
+    gte: -180
+    lte: 180
+  }];
+}
+
+message TripBundle {
+  Trip trip = 1 [(buf.validate.field).required = true];
+  repeated FlightLeg legs = 2 [(buf.validate.field).repeated.max_items = 200];
+  repeated Airport airports = 3 [(buf.validate.field).repeated.max_items = 400];
+  // 服务端版本号（写入时忽略，以 base_revision 为准）
+  int64 revision = 4;
+  // 已删除（墓碑）。墓碑只保留 trip.id，其余内容已清除。
+  bool deleted = 5;
+}
+
+message ListChangesRequest {
+  string cursor = 1 [(buf.validate.field).string.max_len = 64];
+  // 每页数量，默认 100，最大 500
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+}
+
+message ListChangesResponse {
+  repeated TripBundle trips = 1;
+  // 下一次请求使用的游标（即使没有变更也会返回，可直接保存）
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+message PutTripRequest {
+  TripBundle bundle = 1 [(buf.validate.field).required = true];
+  int64 base_revision = 2 [(buf.validate.field).int64.gte = 0];
+}
+
+message PutTripResponse {
+  TripBundle bundle = 1;
+}
+
+message DeleteTripRequest {
+  string trip_id = 1 [(buf.validate.field).string.uuid = true];
+  int64 base_revision = 2 [(buf.validate.field).int64.gt = 0];
+}
+
+message DeleteTripResponse {
+  // 墓碑的版本号
+  int64 revision = 1;
+}
