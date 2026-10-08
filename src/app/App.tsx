@@ -18,6 +18,7 @@ import { PlaybackControls } from '@/features/playback/PlaybackControls'
 import { usePlayback } from '@/features/playback/usePlayback'
 import { BackupMenu } from '@/features/export/BackupMenu'
 import { PosterButton } from '@/features/export/PosterButton'
+import { GifExportButton } from '@/features/export/GifExportButton'
 
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
@@ -97,6 +98,7 @@ function Workspace() {
         </div>
         <div className="ml-auto flex items-center gap-2">
           <BackupMenu compact={!isDesktop} />
+          <GifExportButton geometry={geometry} compact={!isDesktop} />
           <PosterButton geometry={geometry} stats={stats} compact={!isDesktop} />
         </div>
       </header>

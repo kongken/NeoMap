@@ -242,13 +242,63 @@ test.describe('Holiday Flight Map', () => {
     expect(await time.textContent()).toBe(timeBefore)
   })
 
-  test('NRT → LAX 跨经线视野', async ({ page }) => {
+  test('NRT → LAX：导出动画 GIF（可取消、可解码、帧内容变化）', async ({ page }) => {
+    test.setTimeout(180_000) // SwiftShader（软件 WebGL）下每帧读回较慢
     await page.getByRole('button', { name: '新建假期' }).first().click()
     await page.getByRole('dialog').getByLabel('标题').fill('跨太平洋')
     await page.getByRole('dialog').getByRole('button', { name: '创建假期' }).click()
     await addLeg(page, { q: 'NRT', iata: 'NRT' }, { q: 'LAX', iata: 'LAX' }, '2026-11-01')
-    await page.waitForTimeout(2000)
-    await page.getByTestId('map-canvas').screenshot({ path: 'test-results/nrt-lax.png' })
+
+    const dialog = page.getByRole('dialog', { name: '导出航线动画 GIF' })
+    await page.getByRole('button', { name: '导出动画' }).click()
+    await expect(dialog).toContainText('1 段航程')
+
+    // 取消：回到选项，不下载
+    let downloaded = false
+    page.on('download', () => (downloaded = true))
+    await dialog.getByRole('button', { name: '生成 GIF' }).click()
+    await dialog.getByRole('button', { name: '取消' }).click()
+    await expect(dialog.getByRole('button', { name: '生成 GIF' })).toBeVisible()
+    expect(downloaded).toBe(false)
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 160_000 })
+    await dialog.getByRole('button', { name: '生成 GIF' }).click()
+    await expect(dialog.getByRole('progressbar')).toBeVisible()
+    const download = await downloadPromise
+    expect(download.suggestedFilename()).toBe('holiday-flight-map-跨太平洋-2026-10.gif')
+    await expect(dialog).toContainText('已生成并开始下载')
+    const gif = readFileSync(await download.path())
+    expect(gif.subarray(0, 6).toString()).toBe('GIF89a')
+    expect(gif.readUInt16LE(6)).toBe(640)
+    expect(gif.readUInt16LE(8)).toBe(400)
+    expect(gif.length).toBeLessThan(5 * 1024 * 1024)
+
+    // 浏览器解码：帧数正确，且起始帧与终点帧内容不同（航线被画出）
+    const info = await page.evaluate(async (b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+      const decoder = new ImageDecoder({ data: bytes, type: 'image/gif' })
+      await decoder.tracks.ready
+      const count = decoder.tracks.selectedTrack!.frameCount
+      const read = async (i: number) => {
+        const { image } = await decoder.decode({ frameIndex: i })
+        const c = new OffscreenCanvas(image.displayWidth, image.displayHeight)
+        const ctx = c.getContext('2d')!
+        ctx.drawImage(image, 0, 0)
+        image.close()
+        return ctx.getImageData(0, 0, c.width, c.height).data
+      }
+      const first = await read(0)
+      const last = await read(count - 1)
+      let diff = 0
+      for (let i = 0; i < first.length; i += 4) if (first[i] !== last[i] || first[i + 1] !== last[i + 1] || first[i + 2] !== last[i + 2]) diff++
+      return { count, diff }
+    }, gif.toString('base64'))
+    expect(info.count).toBe(37) // 起始帧 + 3 秒 × 12 fps
+    expect(info.diff).toBeGreaterThan(1000)
+
+    // 主地图视角与回放不受影响
+    await page.getByRole('button', { name: '完成' }).click()
+    await expect(page.locator('[aria-label="航线回放"] .tabular-nums').first()).toContainText('0.0s / 6.0s')
   })
 })
 

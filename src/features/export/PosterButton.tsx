@@ -6,7 +6,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import type { TripGeometry, TripStats } from '@/lib/geo/tripGeometry'
 import { isWebglAvailable } from '@/features/map/mapConfig'
 import { useAppData } from '@/app/AppDataContext'
-import { downloadBlob, PosterExportError, posterFileName, renderPoster } from './poster'
+import { downloadBlob, ExportError, exportFileName } from './exportMap'
+import { renderPoster } from './poster'
 
 interface Props {
   geometry: TripGeometry
@@ -17,7 +18,7 @@ interface Props {
 export function PosterButton({ geometry, stats, compact = false }: Props) {
   const { bundle } = useAppData()
   const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState<PosterExportError | null>(null)
+  const [failure, setFailure] = useState<ExportError | null>(null)
 
   const run = async (withoutBasemap: boolean) => {
     if (!bundle || busy) return
@@ -25,10 +26,10 @@ export function PosterButton({ geometry, stats, compact = false }: Props) {
     setFailure(null)
     try {
       const blob = await renderPoster({ trip: bundle.trip, geometry, stats, withoutBasemap })
-      downloadBlob(blob, posterFileName(bundle.trip).replace(/\.png$/, withoutBasemap ? '-no-basemap.png' : '.png'))
+      downloadBlob(blob, exportFileName(bundle.trip, 'png', withoutBasemap ? '-no-basemap' : ''))
       toast.success(withoutBasemap ? '已导出无底图海报' : '海报已导出')
     } catch (err) {
-      setFailure(err instanceof PosterExportError ? err : new PosterExportError(err instanceof Error ? err.message : String(err)))
+      setFailure(err instanceof ExportError ? err : new ExportError(err instanceof Error ? err.message : String(err)))
     } finally {
       setBusy(false)
     }

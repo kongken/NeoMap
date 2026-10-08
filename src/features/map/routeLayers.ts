@@ -75,38 +75,43 @@ function legBadgeImage(num: string, color: string) {
   })
 }
 
+/** 在当前坐标原点绘制机头朝上（正北）的飞机轮廓，长约 28px；GIF 导出也复用 */
+export function drawPlaneShape(ctx: CanvasRenderingContext2D) {
+  ctx.beginPath()
+  ctx.moveTo(0, -14)
+  ctx.quadraticCurveTo(2.2, -12, 2.2, -8)
+  ctx.lineTo(2.2, -3)
+  ctx.lineTo(13, 4)
+  ctx.lineTo(13, 7)
+  ctx.lineTo(2.2, 3.5)
+  ctx.lineTo(2, 9)
+  ctx.lineTo(5.5, 12)
+  ctx.lineTo(5.5, 14)
+  ctx.lineTo(0, 12.5)
+  ctx.lineTo(-5.5, 14)
+  ctx.lineTo(-5.5, 12)
+  ctx.lineTo(-2, 9)
+  ctx.lineTo(-2.2, 3.5)
+  ctx.lineTo(-13, 7)
+  ctx.lineTo(-13, 4)
+  ctx.lineTo(-2.2, -3)
+  ctx.lineTo(-2.2, -8)
+  ctx.quadraticCurveTo(-2.2, -12, 0, -14)
+  ctx.closePath()
+  ctx.fillStyle = '#0f172a'
+  ctx.strokeStyle = '#ffffff'
+  ctx.lineWidth = 2
+  ctx.lineJoin = 'round'
+  ctx.stroke()
+  ctx.fill()
+}
+
 /** 机头朝上（正北）的飞机图标，旋转由 icon-rotate 控制 */
 function planeImage() {
   const s = 32
   return makeImage(s, s, (ctx) => {
     ctx.translate(s / 2, s / 2)
-    ctx.beginPath()
-    ctx.moveTo(0, -14)
-    ctx.quadraticCurveTo(2.2, -12, 2.2, -8)
-    ctx.lineTo(2.2, -3)
-    ctx.lineTo(13, 4)
-    ctx.lineTo(13, 7)
-    ctx.lineTo(2.2, 3.5)
-    ctx.lineTo(2, 9)
-    ctx.lineTo(5.5, 12)
-    ctx.lineTo(5.5, 14)
-    ctx.lineTo(0, 12.5)
-    ctx.lineTo(-5.5, 14)
-    ctx.lineTo(-5.5, 12)
-    ctx.lineTo(-2, 9)
-    ctx.lineTo(-2.2, 3.5)
-    ctx.lineTo(-13, 7)
-    ctx.lineTo(-13, 4)
-    ctx.lineTo(-2.2, -3)
-    ctx.lineTo(-2.2, -8)
-    ctx.quadraticCurveTo(-2.2, -12, 0, -14)
-    ctx.closePath()
-    ctx.fillStyle = '#0f172a'
-    ctx.strokeStyle = '#ffffff'
-    ctx.lineWidth = 2
-    ctx.lineJoin = 'round'
-    ctx.stroke()
-    ctx.fill()
+    drawPlaneShape(ctx)
   })
 }
 
