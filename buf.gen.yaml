@@ -1,0 +1,22 @@
+# 生成命令：buf generate（在仓库根目录执行）
+# Go 代码输出到 server/gen，TypeScript 代码输出到 src/gen；生成结果纳入版本管理。
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/kongken/NeoMap/server/gen
+clean: true
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.11
+    out: server/gen
+    opt: paths=source_relative
+  - remote: buf.build/connectrpc/go:v1.19.1
+    out: server/gen
+    opt: paths=source_relative
+  - remote: buf.build/bufbuild/es:v2.10.2
+    out: src/gen
+    include_imports: true
+    opt:
+      - target=ts
+      - import_extension=none

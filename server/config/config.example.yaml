@@ -1,0 +1,40 @@
+# 生产配置示例。整份文件以 k8s Secret 挂载（包含数据库与 Redis 密码），
+# 环境变量：BUTTERFLY_CONFIG_TYPE=file、BUTTERFLY_CONFIG_FILE_PATH=/etc/neomap/config.yaml、PORT=8080。
+#
+# 注意（Butterfly 当前版本的行为，见 docs/backend-phase1-design.md 第 2 节）：
+# - 数据库密码不会做 URL 转义，请避免使用 @ : / ? # 等字符；
+# - ssl_mode 默认 disable，生产环境必须显式设置；
+# - 配置文件不展开 ${ENV}，请直接写入值。
+
+log:
+  level: info
+  format: json
+
+store:
+  db:
+    main:
+      driver: postgres
+      host: neomap-postgres-rw.neomap.svc
+      port: 5432
+      user: neomap
+      password: "REPLACE_ME"
+      db_name: neomap
+      ssl_mode: require
+  redis:
+    main:
+      addr: neomap-redis.neomap.svc:6379
+      password: "REPLACE_ME"
+      db: 0
+
+neomap:
+  http:
+    cors_allowed_origins:
+      - https://app.example.com
+  database:
+    store: main
+    auto_migrate: false
+    max_open_conns: 10
+    max_idle_conns: 5
+    conn_max_lifetime: 30m
+  redis:
+    store: main

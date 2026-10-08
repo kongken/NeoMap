@@ -1,0 +1,34 @@
+# 本地开发配置（配合 docker-compose.yml 中的 Postgres 与 Redis）。
+# 使用：BUTTERFLY_CONFIG_TYPE=file BUTTERFLY_CONFIG_FILE_PATH=config/config.dev.yaml go run ./cmd/neomap-api
+
+log:
+  level: debug
+  format: text
+
+store:
+  db:
+    main:
+      driver: postgres
+      host: localhost
+      port: 5433
+      user: neomap
+      password: neomap
+      db_name: neomap
+      ssl_mode: disable
+  redis:
+    main:
+      addr: localhost:6380
+      password: ""
+      db: 0
+
+neomap:
+  http:
+    cors_allowed_origins:
+      - http://localhost:5173
+      - http://localhost:4173
+  database:
+    store: main
+    # 本地开发自动迁移；生产环境关闭，改为发布前运行 `neomap-api migrate up`
+    auto_migrate: true
+  redis:
+    store: main

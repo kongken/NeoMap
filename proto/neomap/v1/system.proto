@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package neomap.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// SystemService 提供服务自身的信息，用于验证前后端连通与部署版本。
+service SystemService {
+  // 返回服务名称、版本与服务器时间。无需登录。
+  rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message GetServerInfoRequest {}
+
+message GetServerInfoResponse {
+  // 服务名称，固定为 "neomap-api"。
+  string service = 1;
+  // 构建版本（发布标签或 "dev"）。
+  string version = 2;
+  // 构建时的 Git 提交号。
+  string commit = 3;
+  // 服务器当前时间。
+  google.protobuf.Timestamp server_time = 4;
+}

@@ -28,3 +28,6 @@ test-results
 playwright-report
 .env
 scripts/.cache
+
+# Server
+server/bin/
