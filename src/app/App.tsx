@@ -19,6 +19,8 @@ import { usePlayback } from '@/features/playback/usePlayback'
 import { BackupMenu } from '@/features/export/BackupMenu'
 import { PosterButton } from '@/features/export/PosterButton'
 import { GifExportButton } from '@/features/export/GifExportButton'
+import { AuthProvider } from '@/features/auth/AuthContext'
+import { AccountMenu } from '@/features/auth/AccountMenu'
 
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
@@ -100,6 +102,7 @@ function Workspace() {
           <BackupMenu compact={!isDesktop} />
           <GifExportButton geometry={geometry} compact={!isDesktop} />
           <PosterButton geometry={geometry} stats={stats} compact={!isDesktop} />
+          <AccountMenu compact={!isDesktop} />
         </div>
       </header>
 
@@ -197,10 +200,12 @@ function Workspace() {
 export default function App() {
   return (
     <AppDataProvider>
-      <TooltipProvider>
-        <Workspace />
-        <Toaster position="top-center" offset={{ top: 64 }} mobileOffset={{ top: 110 }} richColors closeButton />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <Workspace />
+          <Toaster position="top-center" offset={{ top: 64 }} mobileOffset={{ top: 110 }} richColors closeButton />
+        </TooltipProvider>
+      </AuthProvider>
     </AppDataProvider>
   )
 }

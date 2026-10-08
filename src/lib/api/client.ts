@@ -1,5 +1,6 @@
 import { createClient, type Client } from '@connectrpc/connect'
 import { createConnectTransport } from '@connectrpc/connect-web'
+import { AuthService } from '@/gen/neomap/v1/auth_pb'
 import { SystemService } from '@/gen/neomap/v1/system_pb'
 
 /**
@@ -18,3 +19,4 @@ const transport = apiBaseUrl
   : null
 
 export const systemClient: Client<typeof SystemService> | null = transport ? createClient(SystemService, transport) : null
+export const authClient: Client<typeof AuthService> | null = transport ? createClient(AuthService, transport) : null

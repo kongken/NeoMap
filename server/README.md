@@ -3,7 +3,7 @@
 NeoMap 的后端服务：Go + [Butterfly](https://butterfly.orx.me) + ConnectRPC，存储使用 PostgreSQL 与 Redis。
 第一阶段（账号与云同步）的整体设计见 [docs/backend-phase1-design.md](../docs/backend-phase1-design.md)。
 
-当前处于**骨架阶段**：服务能启动、连接 Postgres / Redis、执行迁移，并提供健康检查与一个示例 RPC（`SystemService.GetServerInfo`）。登录与行程同步接口尚未实现。
+已完成：骨架（健康检查、迁移、`SystemService`）与**登录**（GitHub / Google OAuth、Redis 会话、`AuthService`）。行程同步接口尚未实现。
 
 ## 本地开发
 
@@ -29,6 +29,40 @@ curl -X POST -H 'Content-Type: application/json' -d '{}' \
 
 前端接入：在根目录 `.env.local` 中设置 `VITE_API_BASE_URL=http://localhost:8080` 后运行 `npm run dev`。
 不设置时前端保持纯本地模式，不发起任何后端请求。
+
+## 登录（OAuth）
+
+| 路径 | 说明 |
+| --- | --- |
+| `GET /auth/oauth/{github,google}/start?return_to=/path` | 跳转到登录方式的授权页 |
+| `GET /auth/oauth/{github,google}/callback` | 授权回调：签发会话 Cookie，跳回 `{app_base_url}{return_to}?login=success`，失败时为 `?login_error=<原因>` |
+| `AuthService.GetMe` | 当前用户；未登录时返回空 user（不是错误） |
+| `AuthService.ListProviders` | 已启用的登录方式 |
+| `AuthService.Logout` | 退出当前设备，`all_devices=true` 退出所有设备 |
+
+实现要点：
+
+- 授权码模式 + **PKCE（S256）**；`state` 存 Redis，10 分钟有效，`GETDEL` 保证只能用一次，并校验与回调的登录方式一致。
+- 会话令牌只放在 HttpOnly、`SameSite=Lax` 的 Cookie 中；Redis 只存令牌的 SHA-256 摘要。默认 30 天，剩余不足一半时访问即续期。
+- 邮箱只保存登录方式确认**已验证**的（GitHub 取 `/user/emails` 中已验证的主邮箱，Google 要求 `email_verified`）。
+- 不同登录方式**不按邮箱自动合并**为同一账号，避免借助未验证邮箱接管账号；账号绑定留到以后实现。
+- `return_to` 只接受站内相对路径（防开放重定向）。
+- CSRF：写请求带 `Origin` 时必须在 `cors_allowed_origins` 白名单内；配合 `SameSite=Lax`。
+- 登录发起按客户端 IP 限流（默认 20 次 / 分钟，Redis 计数，多副本共享）。客户端 IP 只采信 `http.trusted_proxies` 中代理传来的 `X-Forwarded-For`。
+- **需要 Redis ≥ 7.0**（使用 `GETDEL`、`EXPIRE … NX`）。
+
+### 创建 OAuth 应用
+
+- **GitHub**：Settings → Developer settings → OAuth Apps → New OAuth App
+  - Homepage URL：`https://app.<domain>`
+  - Authorization callback URL：`https://api.<domain>/auth/oauth/github/callback`
+- **Google**：Google Cloud Console → APIs & Services → Credentials → Create OAuth client ID（Web application）
+  - Authorized redirect URI：`https://api.<domain>/auth/oauth/google/callback`
+  - OAuth consent screen 需配置应用名称与授权域名，scope 为 `openid email profile`
+
+把 client ID / secret 写入配置的 `neomap.auth.providers`。本地开发：复制 `config/config.dev.yaml` 为 `config/config.local.yaml`（已被 git 忽略）填入凭据，回调地址用 `http://localhost:8080/auth/oauth/<provider>/callback`。未填写凭据的登录方式不会启用。
+
+生产环境的 `app.` 与 `api.` 必须在同一主域下，并设置 `auth.cookie.domain: .<domain>`（见设计文档第 3 节）。
 
 ## 命令
 

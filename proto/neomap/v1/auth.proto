@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package neomap.v1;
+
+// AuthService 管理登录状态。
+// OAuth 登录本身通过普通 HTTP 跳转完成（/auth/oauth/{provider}/start 与 /callback），
+// 会话保存在 HttpOnly Cookie 中，这里只提供查询与退出。
+service AuthService {
+  // 返回当前登录用户。未登录时返回成功但 user 为空：
+  // 前端每次打开页面都会调用，未登录是正常状态而不是错误。
+  rpc GetMe(GetMeRequest) returns (GetMeResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // 返回服务端已配置的登录方式。无需登录。
+  rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // 退出登录并清除会话 Cookie。未登录时也返回成功。
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+}
+
+message User {
+  string id = 1;
+  string display_name = 2;
+  // 来自登录方式的已验证邮箱，可能为空。
+  string email = 3;
+  string avatar_url = 4;
+  // 登录所用的方式，例如 "github"、"google"。
+  string provider = 5;
+}
+
+message GetMeRequest {}
+
+message GetMeResponse {
+  // 未登录时为空。
+  User user = 1;
+}
+
+message Provider {
+  // 标识，用于拼接登录地址：/auth/oauth/{name}/start
+  string name = 1;
+  // 显示名称，例如 "GitHub"
+  string display_name = 2;
+}
+
+message ListProvidersRequest {}
+
+message ListProvidersResponse {
+  repeated Provider providers = 1;
+}
+
+message LogoutRequest {
+  // true 时退出该用户在所有设备上的会话。
+  bool all_devices = 1;
+}
+
+message LogoutResponse {}

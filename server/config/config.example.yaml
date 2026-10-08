@@ -30,6 +30,9 @@ neomap:
   http:
     cors_allowed_origins:
       - https://app.example.com
+    # Ingress / 负载均衡所在网段：只采信这些地址传来的 X-Forwarded-For（登录限流按客户端 IP 计数）
+    trusted_proxies:
+      - 10.0.0.0/8
   database:
     store: main
     auto_migrate: false
@@ -38,3 +41,22 @@ neomap:
     conn_max_lifetime: 30m
   redis:
     store: main
+  auth:
+    app_base_url: https://app.example.com
+    api_base_url: https://api.example.com
+    cookie:
+      name: neomap_session
+      # app. 与 api. 共享 Cookie
+      domain: .example.com
+    session_ttl: 720h
+    session_renew_before: 360h
+    login_rate_limit_per_minute: 20
+    # 回调地址：{api_base_url}/auth/oauth/{github|google}/callback，需在 OAuth 应用中登记。
+    # 未填写 client_id / client_secret 的登录方式不会启用。
+    providers:
+      github:
+        client_id: "REPLACE_ME"
+        client_secret: "REPLACE_ME"
+      google:
+        client_id: "REPLACE_ME.apps.googleusercontent.com"
+        client_secret: "REPLACE_ME"

@@ -1,6 +1,6 @@
 # NeoMap 后端第一阶段设计：账号与云同步
 
-状态：草案（2026-10-08）；里程碑 1（骨架）已完成，见 `server/`
+状态：草案（2026-10-08）；里程碑 1（骨架）、里程碑 2（认证）已完成，见 `server/`
 
 ## 1. 目标与范围
 
@@ -32,7 +32,7 @@
 | API | ConnectRPC + Protobuf，`buf` 生成 Go 与 TS | 前端用 `@connectrpc/connect-web` |
 | 请求校验 | protovalidate（`buf.build/bufbuild/protovalidate`） | Butter 用的 `protoc-gen-validate` 已被官方 protovalidate 取代，新项目建议直接用后者 |
 | 数据库 | PostgreSQL | Butterfly `store.db`，`driver: postgres`（pgx stdlib，`database/sql`） |
-| 缓存 / 会话 | Redis | Butterfly `store.redis`：登录会话、OAuth state、限流、定时任务租约 |
+| 缓存 / 会话 | Redis（≥ 7.0） | Butterfly `store.redis`：登录会话、OAuth state、限流、定时任务租约 |
 | 数据库迁移 | goose（SQL 文件嵌入二进制） | `neomap-api migrate up` 子命令，部署前以 k8s Job 运行 |
 | 部署 | k8s：API 为 Deployment；前端继续在 Cloudflare Pages | 见第 8 节 |
 
@@ -69,7 +69,7 @@ neomap-api（k8s Deployment，≥2 副本，无状态）
 
 1. 前端跳转 `GET https://api.<domain>/auth/oauth/github/start?return_to=/`。
 2. API 生成随机 `state` 与 PKCE `code_verifier`，存 Redis：`neomap:oauth:state:<state>`，TTL 10 分钟，内容含 provider、verifier、`return_to`。302 到 GitHub。
-3. GitHub 回调 `/auth/oauth/github/callback?code&state`：取出并**删除** state（一次性），换取 token，读取用户信息（GitHub 需额外取已验证邮箱）。
+3. GitHub 回调 `/auth/oauth/github/callback?code&state`：取出并**删除** state（一次性），校验 state 属于同一登录方式，换取 token，读取用户信息（GitHub 需额外取已验证邮箱）。
 4. 按 `(provider, provider_user_id)` 查找或创建用户（表结构见第 5 节）。
 5. 签发会话，`Set-Cookie: neomap_session=…; Domain=.<domain>; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`，302 回 `https://app.<domain>{return_to}`。
 6. `return_to` 只允许站内相对路径，防止开放重定向。
@@ -178,10 +178,10 @@ CREATE TABLE flight_legs (
 
 ```proto
 service AuthService {
-  rpc GetMe(GetMeRequest) returns (GetMeResponse);                 // 未登录返回 Unauthenticated
+  rpc GetMe(GetMeRequest) returns (GetMeResponse);                 // 未登录时返回空 user（页面每次加载都调用，未登录不是错误）
   rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);             // all_devices 可选
-  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse); // 里程碑 5
 }
 
 service TripService {
@@ -306,7 +306,7 @@ NeoMap/
 ## 11. 里程碑
 
 1. ✅ 骨架：Butterfly + ConnectRPC + 迁移 + `/healthz`，CI 与镜像发布。
-2. 认证：OAuth、会话、`GetMe` / `Logout`，前端登录入口。
+2. ✅ 认证：OAuth（GitHub、Google，带 PKCE）、会话、`GetMe` / `ListProviders` / `Logout`，前端登录入口。
 3. 行程 API：`PutTrip` / `DeleteTrip` / `ListChanges`，仓储与测试。
 4. 前端同步模块：推送、拉取、冲突处理、首次登录上传、同步状态 UI。
 5. 上线准备：k8s 清单、限流、账号注销、隐私政策。
@@ -316,5 +316,5 @@ NeoMap/
 1. 域名：`app.<domain>` / `api.<domain>` 用哪个主域？Pages 需要绑定该自定义域名。
 2. PostgreSQL：托管服务还是集群内 CloudNativePG？
 3. Go module 路径：沿用 Butter 的风格 `go.orx.me/apps/neomap`，还是 `github.com/kongken/neomap/server`？
-4. 第一版提供哪些登录方式：GitHub + Google，还是只开一个？
+4. ~~第一版提供哪些登录方式~~：已定为 GitHub + Google。
 5. k8s 发布方式：Helm、Kustomize 还是 Argo CD？
