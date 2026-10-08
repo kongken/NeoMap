@@ -120,6 +120,12 @@ Playwright 浏览器：执行 `npx playwright install chromium`，或使用本�
 - 底图需要联网；地图不提供离线模式。
 - lint 中保留的 warning 为 React 规则对「effect 中同步重置状态」（对话框打开时重置表单、数据加载、回放重置）以及 context hook 与 Provider 同文件导出的提示，不影响运行。
 
+## 后端（开发中）
+
+`server/` 是正在开发的后端服务（Go + Butterfly + ConnectRPC，PostgreSQL + Redis，部署在 k8s），用于账号与云同步。
+当前为骨架阶段，前端尚未接入登录或同步；未设置 `VITE_API_BASE_URL` 时应用保持纯本地模式。
+设计见 [docs/backend-phase1-design.md](docs/backend-phase1-design.md)，开发说明见 [server/README.md](server/README.md)。
+
 ## 目录结构
 
 ```text
@@ -139,6 +145,11 @@ src/
   lib/playback/         回放进度纯函数
   lib/backup/           备份构建、校验、导入计划
   types/                核心类型
+  gen/                  buf 生成的 TypeScript（proto 客户端类型）
+  lib/api/              后端 API 客户端（ConnectRPC）
+proto/                  后端 API 定义（protobuf）
+server/                 后端服务（Go），见 server/README.md
+docs/                   设计文档
 scripts/build-airports.ts
 tests/unit/             Vitest
 tests/e2e/              Playwright
