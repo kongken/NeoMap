@@ -23,14 +23,19 @@ func newTestServer(t *testing.T, redisErr error) *httptest.Server {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	Register(r, &Deps{
+	authSvc, users := newTestAuth(t)
+	if err := Register(r, &Deps{
 		Build: application.BuildInfo{Service: "neomap-api", Version: "v1.2.3", Commit: "abc123"},
 		Health: health.NewHandler(map[string]health.Checker{
 			"postgres": func(context.Context) error { return nil },
 			"redis":    func(context.Context) error { return redisErr },
 		}, time.Second),
 		AllowedOrigins: []string{allowedOrigin},
-	})
+		Auth:           authSvc,
+		Users:          users,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 	return srv

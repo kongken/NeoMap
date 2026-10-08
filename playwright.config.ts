@@ -17,7 +17,9 @@ export default defineConfig({
     timezoneId: 'Asia/Shanghai',
     acceptDownloads: true,
     trace: 'retain-on-failure',
-    launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] },
+    // 默认使用 SwiftShader（软件 WebGL），结果与机器 GPU 无关，适合 CI；
+    // 本地机器负载较高时可设 PW_GPU=1 改用真实 GPU，速度快得多。
+    launchOptions: process.env.PW_GPU === '1' ? {} : { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] },
   },
   projects: [
     // PW_CHANNEL=chrome 可使用本机已安装的 Google Chrome

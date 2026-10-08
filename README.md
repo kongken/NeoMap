@@ -26,6 +26,7 @@ npm run build:airports # 重新生成机场数据（见第 3 节）
 ```
 
 Playwright 浏览器：执行 `npx playwright install chromium`，或使用本机已安装的 Google Chrome：`PW_CHANNEL=chrome npm run test:e2e`。
+e2e 默认用 SwiftShader（软件 WebGL）渲染地图，结果与机器 GPU 无关；本机负载较高时可能超时，可加 `PW_GPU=1` 改用真实 GPU。
 
 部署静态文件时，服务器需以 `text/javascript` 类型提供 `.mjs` 文件（MapLibre 的 worker 文件）。
 
@@ -123,7 +124,7 @@ Playwright 浏览器：执行 `npx playwright install chromium`，或使用本�
 ## 后端（开发中）
 
 `server/` 是正在开发的后端服务（Go + Butterfly + ConnectRPC，PostgreSQL + Redis，部署在 k8s），用于账号与云同步。
-当前为骨架阶段，前端尚未接入登录或同步；未设置 `VITE_API_BASE_URL` 时应用保持纯本地模式。
+目前已支持 GitHub / Google 登录（顶栏账号入口），行程云同步尚在开发；未设置 `VITE_API_BASE_URL` 时不显示账号入口，应用保持纯本地模式。
 设计见 [docs/backend-phase1-design.md](docs/backend-phase1-design.md)，开发说明见 [server/README.md](server/README.md)。
 
 ## 目录结构

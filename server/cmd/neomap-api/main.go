@@ -23,11 +23,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
 
-	"github.com/kongken/NeoMap/server/internal/application"
 	neomapapp "github.com/kongken/NeoMap/server/internal/app"
+	"github.com/kongken/NeoMap/server/internal/application"
+	"github.com/kongken/NeoMap/server/internal/auth"
+	"github.com/kongken/NeoMap/server/internal/auth/oauthstate"
+	"github.com/kongken/NeoMap/server/internal/auth/session"
 	"github.com/kongken/NeoMap/server/internal/config"
 	"github.com/kongken/NeoMap/server/internal/health"
 	"github.com/kongken/NeoMap/server/internal/migrate"
+	"github.com/kongken/NeoMap/server/internal/ratelimit"
+	"github.com/kongken/NeoMap/server/internal/repo/user"
 	"github.com/kongken/NeoMap/server/internal/storage"
 )
 
@@ -75,7 +80,17 @@ func serve() {
 				if err != nil {
 					return err
 				}
+				if err := validateAuthConfig(n); err != nil {
+					return err
+				}
+				users := user.NewPostgres(db)
+				deps.Users = users
+				deps.Auth = auth.NewService(n.Auth, n.HTTP.CORSAllowedOrigins,
+					auth.BuildProviders(n.Auth),
+					session.NewStore(rdb, n.Auth.SessionTTL, n.Auth.SessionRenewBefore),
+					oauthstate.NewStore(rdb), users, ratelimit.New(rdb))
 				deps.AllowedOrigins = n.HTTP.CORSAllowedOrigins
+				deps.TrustedProxies = n.HTTP.TrustedProxies
 				deps.Health = health.NewHandler(map[string]health.Checker{
 					"postgres": db.PingContext,
 					"redis":    func(ctx context.Context) error { return rdb.Ping(ctx).Err() },
@@ -85,9 +100,32 @@ func serve() {
 			},
 		},
 		// Router 在所有 InitFunc 完成之后调用
-		Router: func(r *gin.Engine) { neomapapp.Register(r, deps) },
+		Router: func(r *gin.Engine) {
+			if err := neomapapp.Register(r, deps); err != nil {
+				panic(err)
+			}
+		},
 	})
 	svc.Run()
+}
+
+// validateAuthConfig 在启动时检查登录配置，避免上线后才发现回调地址错误。
+func validateAuthConfig(n config.NeoMapConfig) error {
+	a := n.Auth
+	if !a.Providers.GitHub.Enabled() && !a.Providers.Google.Enabled() {
+		slog.Warn("no oauth provider configured: login is disabled")
+		return nil
+	}
+	if a.AppBaseURL == "" {
+		return fmt.Errorf("neomap.auth.app_base_url 未配置")
+	}
+	if a.APIBaseURL == "" && (a.Providers.GitHub.RedirectURL == "" || a.Providers.Google.RedirectURL == "") {
+		return fmt.Errorf("neomap.auth.api_base_url 未配置（用于推导 OAuth 回调地址）")
+	}
+	if a.Cookie.Insecure {
+		slog.Warn("session cookie is not Secure: only for local http development")
+	}
+	return nil
 }
 
 // fileConfig 是 migrate 子命令需要的配置子集，与 serve 共用同一份 YAML。

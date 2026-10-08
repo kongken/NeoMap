@@ -31,3 +31,4 @@ scripts/.cache
 
 # Server
 server/bin/
+server/config/*.local.yaml

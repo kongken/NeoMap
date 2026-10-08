@@ -32,3 +32,18 @@ neomap:
     auto_migrate: true
   redis:
     store: main
+  auth:
+    app_base_url: http://localhost:5173
+    api_base_url: http://localhost:8080
+    cookie:
+      # 本地 http 开发：Cookie 不带 Secure；仅限当前主机（localhost）
+      insecure: true
+    providers:
+      # 本地测试登录：复制本文件为 config.local.yaml（已被 git 忽略）并填入你自己的 OAuth 应用凭据，
+      # 回调地址分别为 http://localhost:8080/auth/oauth/github/callback 与 .../google/callback。
+      github:
+        client_id: ""
+        client_secret: ""
+      google:
+        client_id: ""
+        client_secret: ""

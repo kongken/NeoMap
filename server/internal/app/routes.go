@@ -11,7 +11,9 @@ import (
 
 	"github.com/kongken/NeoMap/server/gen/neomap/v1/neomapv1connect"
 	"github.com/kongken/NeoMap/server/internal/application"
+	"github.com/kongken/NeoMap/server/internal/auth"
 	"github.com/kongken/NeoMap/server/internal/health"
+	"github.com/kongken/NeoMap/server/internal/repo/user"
 )
 
 // Deps 是路由需要的运行时依赖。它们在 Butterfly 的 InitFunc 中初始化，
@@ -20,22 +22,37 @@ type Deps struct {
 	Build          application.BuildInfo
 	Health         *health.Handler
 	AllowedOrigins []string
+	TrustedProxies []string
+	Auth           *auth.Service
+	Users          user.Repository
 }
 
 // Register 挂载所有路由。
-func Register(r *gin.Engine, d *Deps) {
-	r.Use(corsMiddleware(d.AllowedOrigins))
+func Register(r *gin.Engine, d *Deps) error {
+	// 只采信可信代理传来的 X-Forwarded-For（gin 默认信任所有代理，会被伪造）
+	if err := r.SetTrustedProxies(d.TrustedProxies); err != nil {
+		return err
+	}
+	r.Use(corsMiddleware(d.AllowedOrigins), d.Auth.RequireAllowedOrigin(), d.Auth.Middleware())
 
 	r.GET("/ping", health.Live(d.Build.Service))
 	r.GET("/healthz", d.Health.Ready)
 
-	path, h := neomapv1connect.NewSystemServiceHandler(application.NewSystemService(d.Build))
-	mountConnect(r, path, h)
+	r.GET("/auth/oauth/:provider/start", d.Auth.Start)
+	r.GET("/auth/oauth/:provider/callback", d.Auth.Callback)
+
+	mount := connectMounter(r)
+	mount(neomapv1connect.NewSystemServiceHandler(application.NewSystemService(d.Build)))
+	mount(neomapv1connect.NewAuthServiceHandler(application.NewAuthService(d.Auth, d.Users)))
+	return nil
 }
 
-// mountConnect 把 ConnectRPC handler 挂到 gin 上（路径形如 /neomap.v1.SystemService/）。
-func mountConnect(r *gin.Engine, path string, h http.Handler) {
-	r.Any(strings.TrimSuffix(path, "/")+"/*method", gin.WrapH(h))
+// connectMounter 返回把 ConnectRPC handler 挂到 gin 上的函数（路径形如 /neomap.v1.SystemService/），
+// 可直接接收 NewXxxServiceHandler 的两个返回值。
+func connectMounter(r *gin.Engine) func(path string, h http.Handler) {
+	return func(path string, h http.Handler) {
+		r.Any(strings.TrimSuffix(path, "/")+"/*method", gin.WrapH(h))
+	}
 }
 
 // corsMiddleware 只允许配置中的前端来源跨域访问，并携带 Cookie（为后续会话准备）。
