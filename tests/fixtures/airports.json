@@ -1,0 +1,90 @@
+{
+  "NRT": {
+    "id": "oa:5531",
+    "iata": "NRT",
+    "name": "Narita International Airport",
+    "city": "Narita",
+    "countryCode": "JP",
+    "latitude": 35.76858,
+    "longitude": 140.38871,
+    "nameZh": "成田国际机场",
+    "cityZh": "东京"
+  },
+  "LAX": {
+    "id": "oa:3632",
+    "iata": "LAX",
+    "name": "Los Angeles International Airport",
+    "city": "Los Angeles",
+    "countryCode": "US",
+    "latitude": 33.9425,
+    "longitude": -118.408,
+    "nameZh": "洛杉矶国际机场",
+    "cityZh": "洛杉矶"
+  },
+  "AKL": {
+    "id": "oa:5023",
+    "iata": "AKL",
+    "name": "Auckland International Airport",
+    "city": "Auckland",
+    "countryCode": "NZ",
+    "latitude": -37.01199,
+    "longitude": 174.78633,
+    "nameZh": "奥克兰国际机场",
+    "cityZh": "奥克兰"
+  },
+  "ICN": {
+    "id": "oa:5653",
+    "iata": "ICN",
+    "name": "Incheon International Airport",
+    "city": "Seoul",
+    "countryCode": "KR",
+    "latitude": 37.4691,
+    "longitude": 126.451,
+    "nameZh": "仁川国际机场",
+    "cityZh": "首尔"
+  },
+  "HKT": {
+    "id": "oa:26674",
+    "iata": "HKT",
+    "name": "Phuket International Airport",
+    "city": "Phuket",
+    "countryCode": "TH",
+    "latitude": 8.11326,
+    "longitude": 98.3174,
+    "nameZh": "普吉国际机场",
+    "cityZh": "普吉"
+  },
+  "HKG": {
+    "id": "oa:26535",
+    "iata": "HKG",
+    "name": "Hong Kong International Airport",
+    "city": "Hong Kong",
+    "countryCode": "HK",
+    "latitude": 22.31184,
+    "longitude": 113.91486,
+    "nameZh": "香港国际机场",
+    "cityZh": "香港"
+  },
+  "YNZ": {
+    "id": "oa:35316",
+    "iata": "YNZ",
+    "name": "Yancheng Nanyang International Airport",
+    "city": "Yancheng (Tinghu)",
+    "countryCode": "CN",
+    "latitude": 33.42832,
+    "longitude": 120.20545,
+    "nameZh": "盐城南洋国际机场",
+    "cityZh": "盐城"
+  },
+  "SZX": {
+    "id": "oa:27198",
+    "iata": "SZX",
+    "name": "Shenzhen Bao'an International Airport",
+    "city": "Shenzhen",
+    "countryCode": "CN",
+    "latitude": 22.63947,
+    "longitude": 113.80326,
+    "nameZh": "深圳宝安国际机场",
+    "cityZh": "深圳"
+  }
+}
