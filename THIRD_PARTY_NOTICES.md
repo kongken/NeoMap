@@ -31,6 +31,7 @@
 | shadcn/ui（组件源码复制于 `src/components/ui`） | MIT |
 | cmdk | MIT |
 | Sonner | MIT |
+| gifenc | MIT |
 | Tailwind CSS / tw-animate-css / tailwind-merge / clsx | MIT |
 | class-variance-authority | Apache-2.0 |
 | Geist 字体（@fontsource-variable/geist） | SIL Open Font License 1.1 |

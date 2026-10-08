@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useAppData } from '@/app/AppDataContext'
 import { ImportDialog } from './ImportDialog'
-import { downloadBlob } from './poster'
+import { downloadBlob } from './exportMap'
 
 export function BackupMenu({ compact = false }: { compact?: boolean }) {
   const { exportBackup, status } = useAppData()

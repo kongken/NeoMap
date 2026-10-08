@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { useAppData } from '@/app/AppDataContext'
-import { formatDateRange } from '@/features/export/poster'
+import { formatDateRange } from '@/features/export/exportMap'
 import { TripFormDialog } from './TripFormDialog'
 
 /** 当前假期信息：标题、日期、备注、编辑与删除 */
@@ -18,10 +18,10 @@ export function TripPanel() {
   const range = formatDateRange(trip)
 
   return (
-    <section aria-labelledby="trip-title" className="space-y-2">
+    <section aria-labelledby="current-trip-title" className="space-y-2">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <h1 id="trip-title" className="break-words text-xl font-semibold leading-tight" data-testid="trip-title">
+          <h1 id="current-trip-title" className="break-words text-xl font-semibold leading-tight" data-testid="trip-title">
             {trip.title}
           </h1>
           {trip.isSample && (

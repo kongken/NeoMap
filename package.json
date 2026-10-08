@@ -21,6 +21,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "dexie": "^4.4.6",
+    "gifenc": "^1.0.3",
     "lucide-react": "^1.52.0",
     "maplibre-gl": "^6.13.0",
     "radix-ui": "^1.7.0",
