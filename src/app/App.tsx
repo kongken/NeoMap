@@ -18,6 +18,7 @@ import { PlaybackControls } from '@/features/playback/PlaybackControls'
 import { usePlayback } from '@/features/playback/usePlayback'
 import { BackupMenu } from '@/features/export/BackupMenu'
 import { PosterButton } from '@/features/export/PosterButton'
+import { ShareButton } from '@/features/export/ShareButton'
 import { GifExportButton } from '@/features/export/GifExportButton'
 import { AuthProvider } from '@/features/auth/AuthContext'
 import { AccountMenu } from '@/features/auth/AccountMenu'
@@ -103,6 +104,7 @@ function Workspace() {
         <div className="ml-auto flex items-center gap-2">
           <BackupMenu compact={!isDesktop} />
           <GifExportButton geometry={geometry} compact={!isDesktop} />
+          <ShareButton geometry={geometry} stats={stats} compact={!isDesktop} />
           <PosterButton geometry={geometry} stats={stats} compact={!isDesktop} />
           <AccountMenu compact={!isDesktop} />
         </div>

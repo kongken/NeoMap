@@ -242,6 +242,43 @@ test.describe('Holiday Flight Map', () => {
     expect(await time.textContent()).toBe(timeBefore)
   })
 
+  test('分享：生成海报预览，各平台链接带文案，Mastodon 实例刷新后保留', async ({ page }) => {
+    await page.getByRole('button', { name: '加载示例行程' }).click()
+    await expect(page.getByTestId('trip-title')).toHaveText('亚洲假期示例')
+
+    await page.getByRole('button', { name: '分享' }).click()
+    const dialog = page.getByRole('dialog', { name: '分享航线图' })
+    await expect(dialog.getByRole('img', { name: '海报预览' })).toBeVisible({ timeout: 45_000 })
+    await expect(dialog.getByRole('button', { name: '下载图片' })).toBeEnabled()
+
+    const text = dialog.getByLabel('分享文案')
+    await expect(text).toHaveValue(/^亚洲假期示例：\d+ 段航班 · .* #HolidayFlightMap$/)
+    const encoded = encodeURIComponent(await text.inputValue())
+    await expect(dialog.getByRole('link', { name: '发到 X' })).toHaveAttribute('href', `https://x.com/intent/post?text=${encoded}`)
+    await expect(dialog.getByRole('link', { name: '发到 Bluesky' })).toHaveAttribute('href', `https://bsky.app/intent/compose?text=${encoded}`)
+    await expect(dialog.getByRole('link', { name: '发到 X' })).toHaveAttribute('target', '_blank')
+
+    // 编辑文案后链接随之更新
+    await text.fill('我的假期 #test')
+    await expect(dialog.getByRole('link', { name: '发到 X' })).toHaveAttribute('href', `https://x.com/intent/post?text=${encodeURIComponent('我的假期 #test')}`)
+
+    // Mastodon：先填实例，非法输入被拒绝
+    await dialog.getByRole('button', { name: '发到 Mastodon' }).click()
+    const instance = dialog.getByLabel('Mastodon 实例')
+    await instance.fill('not a host')
+    await dialog.getByRole('button', { name: '保存' }).click()
+    await expect(dialog.getByRole('alert')).toContainText('请输入实例域名')
+    await instance.fill('https://Fosstodon.org/@alice')
+    await dialog.getByRole('button', { name: '保存' }).click()
+    await expect(dialog.getByRole('link', { name: '发到 Mastodon' })).toHaveAttribute('href', `https://fosstodon.org/share?text=${encodeURIComponent('我的假期 #test')}`)
+    await expect(dialog).toContainText('Mastodon 实例：fosstodon.org')
+
+    await page.reload()
+    await expect(page.getByTestId('trip-title')).toHaveText('亚洲假期示例')
+    await page.getByRole('button', { name: '分享' }).click()
+    await expect(page.getByRole('link', { name: '发到 Mastodon' })).toHaveAttribute('href', /^https:\/\/fosstodon\.org\/share\?text=/)
+  })
+
   test('NRT → LAX：导出动画 GIF（可取消、可解码、帧内容变化）', async ({ page }) => {
     test.setTimeout(180_000) // SwiftShader（软件 WebGL）下每帧读回较慢
     await page.getByRole('button', { name: '新建假期' }).first().click()
