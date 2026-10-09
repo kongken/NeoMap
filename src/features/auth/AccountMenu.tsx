@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { CloudOff, Loader2, LogIn, LogOut, MonitorSmartphone, RefreshCw, UserRound } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { CircleAlert, CloudCheck, CloudOff, CloudUpload, Loader2, LogIn, LogOut, MonitorSmartphone, RefreshCw, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,6 +12,27 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useAuth } from './AuthContext'
+import { useSync, type PendingCounts, type SyncStatus } from '@/features/sync/SyncContext'
+
+function relativeTime(iso?: string): string {
+  if (!iso) return ''
+  const diff = Date.now() - new Date(iso).getTime()
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  return new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+/** 同步状态的文字描述与图标 */
+function describeSync(status: SyncStatus, counts: PendingCounts): { text: string; icon: typeof CloudCheck; tone: 'ok' | 'busy' | 'warn' } {
+  const pending = counts.dirty + counts.deletes
+  if (status.kind === 'syncing') return { text: '正在同步…', icon: RefreshCw, tone: 'busy' }
+  if (status.kind === 'awaiting-decision') return { text: '等待选择如何处理本设备上的数据', icon: CircleAlert, tone: 'warn' }
+  if (status.kind === 'offline') return { text: `暂时无法连接，恢复后自动同步${pending ? `（${pending} 项待同步）` : ''}`, icon: CloudOff, tone: 'warn' }
+  if (counts.errors > 0) return { text: `${counts.errors} 个假期同步失败，修改后会重试`, icon: CircleAlert, tone: 'warn' }
+  if (pending > 0) return { text: `${pending} 项待同步`, icon: CloudUpload, tone: 'busy' }
+  const when = status.kind === 'idle' ? relativeTime(status.lastSyncedAt) : ''
+  return { text: `已同步${when ? ` · ${when}` : ''}`, icon: CloudCheck, tone: 'ok' }
+}
 
 const providerLabel = (name: string) => (name === 'github' ? 'GitHub' : name === 'google' ? 'Google' : name)
 
@@ -28,7 +50,8 @@ function Avatar({ name, url }: { name: string; url: string }) {
 
 /** 顶栏账号入口。未配置后端（纯本地模式）时不渲染。 */
 export function AccountMenu({ compact = false }: { compact?: boolean }) {
-  const { state, login, logout, refresh } = useAuth()
+  const { state, login, refresh } = useAuth()
+  const sync = useSync()
   const [busy, setBusy] = useState(false)
 
   if (state.status === 'disabled') return null
@@ -84,7 +107,11 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-60">
-          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">登录后可在多台设备间同步行程（同步功能开发中）</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+            {sync.status.kind === 'signed-out' && sync.counts.dirty + sync.counts.deletes > 0
+              ? `本设备有 ${sync.counts.dirty + sync.counts.deletes} 项修改尚未同步到「${sync.account?.displayName ?? '账号'}」，登录后继续同步`
+              : '登录后可在多台设备间同步假期'}
+          </DropdownMenuLabel>
           <DropdownMenuSeparator />
           {state.providers.length === 0 ? (
             <DropdownMenuItem disabled>暂未开放登录</DropdownMenuItem>
@@ -102,11 +129,24 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
   }
 
   const { user } = state
+  const syncInfo = describeSync(sync.status, sync.counts)
+  const SyncIcon = syncInfo.icon
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size={compact ? 'icon' : 'default'} aria-label={`账号：${user.displayName}`} disabled={busy}>
-          {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Avatar name={user.displayName} url={user.avatarUrl} />}
+        <Button variant="ghost" size={compact ? 'icon' : 'default'} aria-label={`账号：${user.displayName}，${syncInfo.text}`} disabled={busy} data-testid="account-button">
+          <span className="relative">
+            {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Avatar name={user.displayName} url={user.avatarUrl} />}
+            <span
+              className={cn(
+                'absolute -right-1 -bottom-1 flex size-3.5 items-center justify-center rounded-full bg-background',
+                syncInfo.tone === 'ok' ? 'text-emerald-600' : syncInfo.tone === 'warn' ? 'text-amber-600' : 'text-primary',
+              )}
+              aria-hidden
+            >
+              <SyncIcon className={cn('size-3', sync.status.kind === 'syncing' && 'animate-spin')} />
+            </span>
+          </span>
           {!compact && <span className="max-w-32 truncate">{user.displayName}</span>}
         </Button>
       </DropdownMenuTrigger>
@@ -117,13 +157,20 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
           <span className="block text-xs font-normal text-muted-foreground">通过 {providerLabel(user.provider)} 登录</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">云同步开发中，行程目前仍只保存在当前浏览器。</DropdownMenuLabel>
+        <DropdownMenuLabel className="flex items-start gap-1.5 text-xs font-normal text-muted-foreground" data-testid="sync-status">
+          <SyncIcon className={cn('mt-0.5 size-3.5 shrink-0', sync.status.kind === 'syncing' && 'animate-spin')} aria-hidden />
+          {syncInfo.text}
+        </DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => sync.syncNow()} disabled={sync.status.kind === 'syncing' || sync.status.kind === 'awaiting-decision'}>
+          <RefreshCw aria-hidden />
+          立即同步
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => void run(() => logout(false), '退出登录失败，请重试')}>
+        <DropdownMenuItem onSelect={() => void run(() => sync.requestLogout(false), '退出登录失败，请重试')}>
           <LogOut aria-hidden />
           退出登录
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void run(() => logout(true), '退出失败，请重试')}>
+        <DropdownMenuItem onSelect={() => void run(() => sync.requestLogout(true), '退出失败，请重试')}>
           <MonitorSmartphone aria-hidden />
           退出所有设备
         </DropdownMenuItem>

@@ -1,0 +1,48 @@
+# 端到端同步测试使用的 API 配置（依赖 server/docker-compose.yml 中的 Postgres 与 Redis）。
+# 登录方式指向本地假 OAuth 服务（tests/e2e/support/fake-oauth.mjs），前端运行在 :5174。
+log:
+  level: warn
+  format: text
+
+store:
+  db:
+    main:
+      driver: postgres
+      host: localhost
+      port: 5433
+      user: neomap
+      password: neomap
+      db_name: neomap
+      ssl_mode: disable
+  redis:
+    main:
+      addr: localhost:6380
+      password: ""
+      db: 0
+
+neomap:
+  http:
+    cors_allowed_origins:
+      - http://localhost:5174
+  database:
+    auto_migrate: true
+  auth:
+    app_base_url: http://localhost:5174
+    api_base_url: http://localhost:18080
+    login_rate_limit_per_minute: 200
+    cookie:
+      insecure: true
+    providers:
+      github:
+        client_id: e2e
+        client_secret: e2e
+        auth_url: http://localhost:9099/authorize
+        token_url: http://localhost:9099/token
+        userinfo_url: http://localhost:9099/github/user
+        emails_url: http://localhost:9099/github/emails
+      google:
+        client_id: e2e
+        client_secret: e2e
+        auth_url: http://localhost:9099/authorize
+        token_url: http://localhost:9099/token
+        userinfo_url: http://localhost:9099/google/userinfo

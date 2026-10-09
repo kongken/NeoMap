@@ -36,6 +36,13 @@ interface AppData {
   planImport: (backup: BackupV1) => ImportPlan
   findDuplicateTrips: (backup: BackupV1) => Promise<string[]>
   applyImport: (plan: ImportPlan) => Promise<void>
+  /** 订阅本地数据变更（云同步用于防抖触发） */
+  subscribeLocalChanges: (fn: () => void) => () => void
+  /**
+   * 重新从本地存储读取（云同步写入之后调用）。renamed 为行程 ID 映射，
+   * 当前查看的行程被换了 ID 时保持选中；当前行程被删除时切换到其他行程。
+   */
+  refreshFromStorage: (renamed?: Map<string, string>) => Promise<void>
 }
 
 const Ctx = createContext<AppData | null>(null)
@@ -203,6 +210,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       await repo.applyImport(plan)
       await refreshTrips()
       if (plan.trips[0]) selectTrip(plan.trips[0].id)
+    },
+    subscribeLocalChanges: (fn: () => void) => repo.onChange(fn),
+    refreshFromStorage: async (renamed?: Map<string, string>) => {
+      const list = await repo.listTrips()
+      setTrips(list)
+      let current = currentRef.current
+      if (current && renamed?.has(current)) current = renamed.get(current)!
+      if (current && !list.some((t) => t.id === current)) current = list.at(-1)?.id ?? null
+      if (current === null && list.length > 0) current = list.at(-1)!.id
+      if (current !== currentRef.current) {
+        selectTrip(current)
+      } else {
+        await reloadBundle(current)
+      }
     },
   }
 

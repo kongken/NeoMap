@@ -1,5 +1,5 @@
 import { deflateSync } from 'node:zlib'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 
 const crcTable = Array.from({ length: 256 }, (_, n) => {
   let c = n
@@ -87,4 +87,35 @@ export async function addLeg(page: Page, from: { q: string; iata: string } | nul
 
 export async function legRoutes(page: Page) {
   return page.getByTestId('leg-item').evaluateAll((els) => els.map((el) => (el.querySelector('.font-mono')?.textContent ?? '').replace(/\s+/g, '')))
+}
+
+/**
+ * 地图截图：等到画面不是空白、且连续两次截图一致（地图已渲染完成）再返回。
+ * 使用真实 GPU 时，WebGL 画布的截图偶尔会在一帧完成前取到空白。
+ */
+export async function stableMapShot(page: Page, mask: Locator[]): Promise<Buffer> {
+  const canvas = page.getByTestId('map-canvas')
+  let prev: Buffer | null = null
+  for (let i = 0; i < 20; i++) {
+    const shot = await canvas.screenshot({ mask })
+    const blank = await page.evaluate(async (b64) => {
+      const img = new Image()
+      img.src = `data:image/png;base64,${b64}`
+      await img.decode()
+      const c = document.createElement('canvas')
+      c.width = img.width
+      c.height = img.height
+      const ctx = c.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      // 只看地图中部，避开缩放按钮等控件（空白画布时这一区域是单一底色）
+      const d = ctx.getImageData(Math.floor(c.width * 0.1), Math.floor(c.height * 0.1), Math.floor(c.width * 0.7), Math.floor(c.height * 0.5)).data
+      const colors = new Set<number>()
+      for (let p = 0; p < d.length && colors.size < 20; p += 4 * 97) colors.add((d[p] << 16) | (d[p + 1] << 8) | d[p + 2])
+      return colors.size < 10
+    }, shot.toString('base64'))
+    if (!blank && prev && prev.equals(shot)) return shot
+    prev = blank ? null : shot
+    await page.waitForTimeout(300)
+  }
+  throw new Error('地图画面在 6 秒内没有稳定下来')
 }

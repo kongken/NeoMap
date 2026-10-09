@@ -21,6 +21,8 @@ import { PosterButton } from '@/features/export/PosterButton'
 import { GifExportButton } from '@/features/export/GifExportButton'
 import { AuthProvider } from '@/features/auth/AuthContext'
 import { AccountMenu } from '@/features/auth/AccountMenu'
+import { SyncProvider } from '@/features/sync/SyncContext'
+import { SyncDialogs } from '@/features/sync/SyncDialogs'
 
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
@@ -201,10 +203,13 @@ export default function App() {
   return (
     <AppDataProvider>
       <AuthProvider>
-        <TooltipProvider>
-          <Workspace />
-          <Toaster position="top-center" offset={{ top: 64 }} mobileOffset={{ top: 110 }} richColors closeButton />
-        </TooltipProvider>
+        <SyncProvider>
+          <TooltipProvider>
+            <Workspace />
+            <SyncDialogs />
+            <Toaster position="top-center" offset={{ top: 64 }} mobileOffset={{ top: 110 }} richColors closeButton />
+          </TooltipProvider>
+        </SyncProvider>
       </AuthProvider>
     </AppDataProvider>
   )

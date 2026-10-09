@@ -37,9 +37,34 @@ export class TripRepository {
   private readonly db: HolidayDb
   private readonly newId: () => string
 
+  private readonly listeners = new Set<() => void>()
+
   constructor(db: HolidayDb, newId: () => string = () => crypto.randomUUID()) {
     this.db = db
     this.newId = newId
+  }
+
+  /** 订阅本地数据变更（用于触发云同步）；返回取消订阅函数 */
+  onChange(fn: () => void): () => void {
+    this.listeners.add(fn)
+    return () => this.listeners.delete(fn)
+  }
+
+  private emitChange() {
+    for (const fn of this.listeners) fn()
+  }
+
+  /** 读写事务：覆盖所有表，使行程数据与同步标记在同一事务内提交 */
+  private writeTx<T>(fn: () => Promise<T>): Promise<T> {
+    const d = this.db
+    return d.transaction('rw', [d.trips, d.legs, d.referencedAirports, d.tripSync, d.pendingDeletes], fn)
+  }
+
+  /** 写入后通知监听者（事务已提交） */
+  private async mutate<T>(fn: () => Promise<T>): Promise<T> {
+    const result = await this.writeTx(fn)
+    this.emitChange()
+    return result
   }
 
   async open(): Promise<void> {
@@ -64,24 +89,36 @@ export class TripRepository {
   async createTrip(input: TripInput, extra: Partial<Pick<Trip, 'isSample'>> = {}): Promise<Trip> {
     const ts = nowIso()
     const trip: Trip = { id: this.newId(), ...clean(input), ...extra, createdAt: ts, updatedAt: ts }
-    await this.db.trips.add(trip)
-    return trip
+    return this.mutate(async () => {
+      await this.db.trips.add(trip)
+      await this.markDirty(trip.id)
+      return trip
+    })
   }
 
   async updateTrip(tripId: string, input: TripInput): Promise<Trip> {
-    return this.db.transaction('rw', this.db.trips, async () => {
+    return this.mutate(async () => {
       const existing = await this.db.trips.get(tripId)
       if (!existing) throw new Error('假期不存在或已被删除')
       const { startDate: _s, endDate: _e, notes: _n, ...rest } = existing
       const trip: Trip = { ...rest, ...clean(input), updatedAt: nowIso() }
       await this.db.trips.put(trip)
+      await this.markDirty(tripId)
       return trip
     })
   }
 
-  /** 单个事务删除假期、其航段和机场快照 */
+  /**
+   * 单个事务删除假期、其航段和机场快照。
+   * 已同步到服务端的行程记录为待删除，下次同步时通知服务端。
+   */
   async deleteTrip(tripId: string): Promise<void> {
-    await this.db.transaction('rw', this.db.trips, this.db.legs, this.db.referencedAirports, async () => {
+    await this.mutate(async () => {
+      const sync = await this.db.tripSync.get(tripId)
+      if (sync && sync.serverRevision > 0 && !sync.localOnly) {
+        await this.db.pendingDeletes.put({ tripId, serverRevision: sync.serverRevision })
+      }
+      await this.db.tripSync.delete(tripId)
       await this.db.legs.where('tripId').equals(tripId).delete()
       await this.db.referencedAirports.where('tripId').equals(tripId).delete()
       await this.db.trips.delete(tripId)
@@ -90,7 +127,7 @@ export class TripRepository {
 
   async addLeg(tripId: string, input: LegInput): Promise<FlightLeg> {
     assertDifferent(input)
-    return this.db.transaction('rw', this.db.trips, this.db.legs, this.db.referencedAirports, async () => {
+    return this.mutate(async () => {
       if (!(await this.db.trips.get(tripId))) throw new Error('假期不存在或已被删除')
       const count = await this.db.legs.where('tripId').equals(tripId).count()
       const departureAirportId = await this.ensureSnapshot(tripId, input.departure)
@@ -115,7 +152,7 @@ export class TripRepository {
 
   async updateLeg(legId: string, input: LegInput): Promise<FlightLeg> {
     assertDifferent(input)
-    return this.db.transaction('rw', this.db.trips, this.db.legs, this.db.referencedAirports, async () => {
+    return this.mutate(async () => {
       const existing = await this.db.legs.get(legId)
       if (!existing) throw new Error('航段不存在或已被删除')
       const departureAirportId = await this.ensureSnapshot(existing.tripId, input.departure)
@@ -139,7 +176,7 @@ export class TripRepository {
   }
 
   async deleteLeg(legId: string): Promise<void> {
-    await this.db.transaction('rw', this.db.trips, this.db.legs, this.db.referencedAirports, async () => {
+    await this.mutate(async () => {
       const existing = await this.db.legs.get(legId)
       if (!existing) return
       await this.db.legs.delete(legId)
@@ -151,7 +188,7 @@ export class TripRepository {
 
   /** 上移(-1) / 下移(+1)，并规范化为连续 order */
   async moveLeg(legId: string, direction: -1 | 1): Promise<void> {
-    await this.db.transaction('rw', this.db.trips, this.db.legs, async () => {
+    await this.mutate(async () => {
       const leg = await this.db.legs.get(legId)
       if (!leg) throw new Error('航段不存在或已被删除')
       const legs = sortLegs(await this.db.legs.where('tripId').equals(leg.tripId).toArray())
@@ -198,16 +235,17 @@ export class TripRepository {
 
   /** 单个事务追加写入；任一失败则整体回滚 */
   async applyImport(plan: ImportPlan): Promise<void> {
-    await this.db.transaction('rw', this.db.trips, this.db.legs, this.db.referencedAirports, async () => {
+    await this.mutate(async () => {
       await this.db.trips.bulkAdd(plan.trips)
       await this.db.referencedAirports.bulkAdd(plan.airports)
       await this.db.legs.bulkAdd(plan.legs)
+      for (const t of plan.trips) await this.markDirty(t.id)
     })
   }
 
   /** 示例行程：一次事务写入 */
   async createSampleTrip(title: string, legs: { from: Airport; to: Airport; date: string }[], range: { startDate: string; endDate: string }): Promise<Trip> {
-    return this.db.transaction('rw', this.db.trips, this.db.legs, this.db.referencedAirports, async () => {
+    return this.mutate(async () => {
       const trip = await this.createTrip({ title, ...range, notes: '这是示例行程，可随时编辑或删除。' }, { isSample: true })
       for (const l of legs) await this.addLeg(trip.id, { departure: l.from, arrival: l.to, departureDate: l.date })
       return trip
@@ -244,8 +282,20 @@ export class TripRepository {
     if (changed.length) await this.db.legs.bulkPut(changed.map(({ l, order }) => ({ ...l, order })))
   }
 
+  /** 更新行程的修改时间，并标记为待同步 */
   private async touchTrip(tripId: string): Promise<void> {
     await this.db.trips.update(tripId, { updatedAt: nowIso() })
+    await this.markDirty(tripId)
+  }
+
+  /** 标记行程有本地修改（须在写事务内调用）。「仅本设备」的行程保持不参与同步。 */
+  private async markDirty(tripId: string): Promise<void> {
+    const rec = await this.db.tripSync.get(tripId)
+    await this.db.tripSync.put(
+      rec
+        ? { ...rec, state: 'dirty', localVersion: rec.localVersion + 1, error: undefined }
+        : { tripId, state: 'dirty', serverRevision: 0, localOnly: false, localVersion: 1 },
+    )
   }
 }
 
