@@ -1,6 +1,6 @@
 # NeoMap 后端第一阶段设计：账号与云同步
 
-状态：草案（2026-10-08）；里程碑 1（骨架）、2（认证）、3（行程 API）已完成，见 `server/`
+状态：草案（2026-10-08）；里程碑 1（骨架）、2（认证）、3（行程 API）、4（前端同步）已完成
 
 ## 1. 目标与范围
 
@@ -232,12 +232,21 @@ message DeleteTripRequest   { string trip_id = 1; int64 base_revision = 2; }
 
 ### 6.3 客户端同步模块
 
-本地 IndexedDB 新增：
+本地 IndexedDB（Dexie 数据库版本 2）新增三张表，领域数据（`trips` / `legs` / `referencedAirports`）与备份格式不变：
 
-- `trips` 表增加字段 `syncState: 'synced' | 'dirty' | 'conflict'`、`serverRevision`。
-- `syncMeta` 表：`userId`、`cursor`、`lastSyncedAt`。
+- `tripSync`：每个行程的 `state`（`dirty` / `synced` / `error`）、`serverRevision`、`localOnly`（「仅本设备」）、`localVersion`（本地修改计数）、`error`。
+- `pendingDeletes`：已在本地删除、尚未通知服务端的行程及其 `serverRevision`。
+- `syncMeta`：关联的账号（`userId`、`displayName`）、`cursor`、`lastSyncedAt`。
 
-同步时机：登录后、页面回到前台、本地写入后防抖 2 秒、每 5 分钟。一次同步：
+升级时，已有行程全部标记为 `dirty`、`serverRevision = 0`（尚未关联账号），首次登录时由用户决定是否上传。
+
+`TripRepository` 的每次写入在同一事务内把行程标记为 `dirty` 并递增 `localVersion`；删除已上传的行程时写入 `pendingDeletes`。同步引擎（`SyncEngine`）通过 `SyncStore` 写入服务端结果，不会再次标记为待同步。
+
+**上传期间的本地修改**：上传时连同 `localVersion` 一起读取快照；上传成功后只有 `localVersion` 未变才标记为 `synced`，否则保持 `dirty`、下次以新版本继续上传。上传期间被删除的行程，其 `pendingDeletes` 记录更新为上传后的版本，避免删除被误判为冲突。
+
+**自己写入的回声**：拉取到 `revision ≤ serverRevision` 的行程（本设备刚上传的）直接跳过。
+
+同步时机：登录后、页面回到前台、恢复网络（`online` 事件）、本地写入后防抖 2 秒、每 5 分钟；同一时间只运行一次，运行中再次触发会在结束后补跑。一次同步：
 
 1. **推送**：对每个 `dirty` 行程调用 `PutTrip(bundle, serverRevision ?? 0)`；已删除的调用 `DeleteTrip`。成功后更新 `serverRevision`，标记 `synced`。
 2. **拉取**：`ListChanges(cursor)` 直到 `has_more = false`。对每个返回的行程：
@@ -249,19 +258,29 @@ message DeleteTripRequest   { string trip_id = 1; int64 base_revision = 2; }
 
 ### 6.4 冲突处理
 
-不做字段级合并。冲突时**以服务端为准**，同时不丢失本地修改：
+不做字段级合并。冲突时**以服务端为准**，同时不丢失本地修改（内容完全相同时不算冲突，不产生副本）：
 
 - 本地版本另存为一个新行程（新 ID，标题加「（本设备副本）」），标记 `dirty`，下一轮上传。
 - 服务端版本覆盖原行程。
 - 界面提示：「『亚洲假期』在其他设备上被修改，本设备的修改已另存为副本」。
 
+其他组合：
+
+- 本地删除、其他设备之后又修改：删除不生效，保留服务端版本（提示「本设备的删除未生效」）。
+- 本地修改、其他设备已删除：本地内容另存为新行程（冲突副本），原行程删除。
+- `AlreadyExists`：行程与航段换新 ID 重新上传，界面保持选中换 ID 后的行程。
+- `NotFound`（服务端已无该行程）：改为新建（`base_revision = 0`）。
+- `InvalidArgument` / `ResourceExhausted`：该行程标记为 `error` 并显示原因，不阻塞其他行程；用户再次修改后重试。
+- `Unauthenticated`：停止同步，提示重新登录；网络错误：显示离线，恢复网络后自动重试。
+
 `ListChanges` 返回 `FailedPrecondition`（游标对应的墓碑已被清理）时，客户端丢弃游标并全量拉取；本地 `synced` 但服务端已不存在的行程直接删除，`dirty` 的重新上传。
 
 ### 6.5 首次登录与退出
 
-- **首次登录**：本地有未关联账号的行程时，弹窗确认「把本设备上的 N 个假期上传到账号？」。确认后逐个 `PutTrip(base_revision = 0)`，再执行一次完整同步。拒绝则只拉取云端数据，本地行程保留为「仅本设备」。
-- **换账号登录**：本地数据关联的 `userId` 与新账号不同时，先询问是否清除本设备上旧账号的数据，不自动合并。
-- **退出登录**：有未同步修改时警告。退出后默认清除本设备上该账号的行程（考虑共用设备的隐私），可选择保留为本地数据。
+- **首次登录**：本地有未上传的行程时询问「同步本设备上的假期？」：选择「上传到账号」则逐个 `PutTrip(base_revision = 0)` 后完整拉取；选择「仅保留在本设备」则这些行程标记为 `localOnly`，只拉取云端数据。`localOnly` 的行程在假期详情中显示「仅本设备」并可单独「上传到账号」。本地没有行程时直接关联、不弹窗。
+- **换账号登录**：本地数据关联的账号与新账号不同时，提供「清除后继续」「保留为本地数据」（随后询问是否上传到新账号）「取消并退出登录」，有未同步修改时提示，不自动合并。
+- **退出登录**：说明本设备上属于该账号的假期数量，有未同步修改时警告；默认「从本设备清除这些假期」（共用设备的隐私），可选「保留在本设备」作为未登录的本地数据（重新登录时询问是否上传）。「仅本设备」的行程始终保留。
+- **会话失效**：本地修改照常保存并标记为待同步，账号菜单提示「登录后继续同步」。
 
 ## 7. 安全与隐私
 
@@ -317,7 +336,7 @@ NeoMap/
 1. ✅ 骨架：Butterfly + ConnectRPC + 迁移 + `/healthz`，CI 与镜像发布。
 2. ✅ 认证：OAuth（GitHub、Google，带 PKCE）、会话、`GetMe` / `ListProviders` / `Logout`，前端登录入口。
 3. ✅ 行程 API：`PutTrip` / `DeleteTrip` / `ListChanges`，仓储与测试（墓碑清理的定时调度放到里程碑 5）。
-4. 前端同步模块：推送、拉取、冲突处理、首次登录上传、同步状态 UI。
+4. ✅ 前端同步模块：推送、拉取、冲突处理、首次登录上传、同步状态 UI（`src/lib/sync/`、`src/features/sync/`）。
 5. 上线准备：k8s 清单、限流、账号注销、隐私政策。
 
 ## 12. 待决定

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
-import { addLeg, freshStart, legRoutes } from './helpers'
+import { addLeg, freshStart, legRoutes, stableMapShot } from './helpers'
 
 test.describe('Holiday Flight Map', () => {
   test.beforeEach(async ({ page }) => {
@@ -201,7 +201,7 @@ test.describe('Holiday Flight Map', () => {
     await expect(toasts).toHaveCount(0, { timeout: 15_000 })
     await page.waitForTimeout(500)
     const mask = [page.getByTestId('map-overlay')]
-    const before = await page.getByTestId('map-canvas').screenshot({ mask })
+    const before = await stableMapShot(page, mask)
 
     const downloadPromise = page.waitForEvent('download', { timeout: 45_000 })
     await page.getByRole('button', { name: '导出海报' }).click()
@@ -232,7 +232,7 @@ test.describe('Holiday Flight Map', () => {
 
     await expect(toasts).toHaveCount(0, { timeout: 15_000 })
     await page.waitForTimeout(500)
-    const after = await page.getByTestId('map-canvas').screenshot({ mask })
+    const after = await stableMapShot(page, mask)
     if (!after.equals(before)) {
       const { writeFileSync } = await import('node:fs')
       writeFileSync('test-results/map-before.png', before)

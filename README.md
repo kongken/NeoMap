@@ -28,6 +28,8 @@ npm run build:airports # 重新生成机场数据（见第 3 节）
 Playwright 浏览器：执行 `npx playwright install chromium`，或使用本机已安装的 Google Chrome：`PW_CHANNEL=chrome npm run test:e2e`。
 e2e 默认用 SwiftShader（软件 WebGL）渲染地图，结果与机器 GPU 无关；本机负载较高时可能超时，可加 `PW_GPU=1` 改用真实 GPU。
 
+云同步的端到端测试（两个浏览器上下文模拟两台设备）需要 Postgres 与 Redis：`(cd server && docker compose up -d --wait)` 后执行 `E2E_SYNC=1 npx playwright test --project sync`，会自动启动 API、本地假 OAuth 服务（`tests/e2e/support/`）与接入 API 的前端（:5174）。
+
 部署静态文件时，服务器需以 `text/javascript` 类型提供 `.mjs` 文件（MapLibre 的 worker 文件）。
 
 ## 2. 地图配置
@@ -124,7 +126,7 @@ e2e 默认用 SwiftShader（软件 WebGL）渲染地图，结果与机器 GPU �
 ## 后端（开发中）
 
 `server/` 是正在开发的后端服务（Go + Butterfly + ConnectRPC，PostgreSQL + Redis，部署在 k8s），用于账号与云同步。
-目前已支持 GitHub / Google 登录（顶栏账号入口），行程云同步尚在开发；未设置 `VITE_API_BASE_URL` 时不显示账号入口，应用保持纯本地模式。
+设置 `VITE_API_BASE_URL` 后，顶栏出现账号入口：支持 GitHub / Google 登录，登录后假期在多台设备间自动同步（本地优先：数据仍先保存在浏览器，联网时上传与拉取；两端同时修改时以服务端为准，本设备的修改另存为「（本设备副本）」）。未设置时不显示账号入口，应用保持纯本地模式。
 设计见 [docs/backend-phase1-design.md](docs/backend-phase1-design.md)，开发说明见 [server/README.md](server/README.md)。
 
 ## 目录结构
@@ -145,6 +147,9 @@ src/
   lib/geo/              大圆插值、跨经线处理、视野范围、统计
   lib/playback/         回放进度纯函数
   lib/backup/           备份构建、校验、导入计划
+  lib/sync/             云同步引擎、本地同步存储、proto 转换
+  features/auth/        登录与账号菜单
+  features/sync/        同步状态、账号相关对话框
   types/                核心类型
   gen/                  buf 生成的 TypeScript（proto 客户端类型）
   lib/api/              后端 API 客户端（ConnectRPC）
